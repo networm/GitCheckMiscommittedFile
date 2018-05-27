@@ -1,0 +1,54 @@
+#!/usr/bin/env ruby
+
+$rules =
+[
+  "ProjectSettings/*",
+  "Assets/Resources/Yourfile.example",
+]
+
+def check_files_rules
+  if $newrev == $zero
+    # delete remote branch
+    return
+  end
+
+  if $oldrev == $zero
+    # list everything reachable from newrev but not any heads
+    new_commits = `git rev-list #{$newrev} --not --branches=*`.split("\n")
+  else
+    new_commits = `git rev-list #{$oldrev}..#{$newrev}`.split("\n")
+  end
+
+  has_error = false
+  new_commits.each do |rev|
+    message = `git log -1 --pretty="%s" #{rev}`.to_s.force_encoding("UTF-8")
+
+    files = `git diff --name-only -z #{rev}~..#{rev}`.to_s.force_encoding("UTF-8").split("\0")
+    files.each do |file|
+      $rules.each do |rule|
+        filename = File.basename(file, ".*")
+        if file =~ /#{rule}/ and !message.include? filename
+          puts "[POLICY] Error: To commit \"#{file}\" file in commit, there should be \"#{filename}\" in commit message of commit \"#{rev}\""
+          has_error = true
+        end
+      end
+    end
+  end
+
+  if has_error
+    puts "[POLICY] Error: There is a miscommited file"
+    exit 1
+  end
+end
+
+$refname = ARGV[0]
+$oldrev = ARGV[1]
+$newrev = ARGV[2]
+$zero = '0000000000000000000000000000000000000000'
+
+puts "Apply polices"
+puts "(#{$refname}) (#{$oldrev[0,6]}) (#{$newrev[0,6]})"
+puts ""
+puts "Check miscommited files"
+check_files_rules
+puts ""
